@@ -3,7 +3,7 @@
 <div align="center">
 
 
- <a href='https://arxiv.org/abs/2501.03699'><img src='https://img.shields.io/badge/arXiv-2405.17933-b31b1b.svg'></a> &nbsp;
+ <a href='https://arxiv.org/abs/2501.03699'><img src='https://img.shields.io/badge/arXiv-2501.03699-b31b1b.svg'></a> &nbsp;
  <a href='https://mcg-nju.github.io/MoG_Web/'><img src='https://img.shields.io/badge/Project-Page-Green'>
 
 [Guozhen Zhang](https://github.com/GuozhenZhang1999), [Yuhan Zhu](https://scholar.google.com/citations?user=ydgR3LgAAAAJ&hl=en), [Yutao Cui](https://scholar.google.com.hk/citations?user=TSMchWcAAAAJ&hl=zh-CN), Xiaotong Zhao, [Kai Ma](https://scholar.google.com.hk/citations?user=FSSXeyAAAAAJ&hl=zh-CN), [Limin Wang](http://wanglimin.github.io/)
