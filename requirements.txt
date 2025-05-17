@@ -40,6 +40,6 @@ gradio
 httpx[socks]
 deepspeed==0.15.2
 accelerate[deepspeed]
-git+https://mirrors.tencent.com/github.com/microsoft/LoRA
+git+https://github.com/microsoft/LoRA.git
 huggingface_hub==0.25.0
 lmdb
