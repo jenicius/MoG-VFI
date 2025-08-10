@@ -43,3 +43,4 @@ accelerate[deepspeed]
 git+https://github.com/microsoft/LoRA.git
 huggingface_hub==0.25.0
 lmdb
+accelerate

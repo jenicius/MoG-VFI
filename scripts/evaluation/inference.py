@@ -4,6 +4,10 @@ from omegaconf import OmegaConf
 from tqdm import tqdm
 from einops import rearrange, repeat
 from collections import OrderedDict
+import torch
+from collections import OrderedDict
+from accelerate import dispatch_model
+
 
 import torch
 import torchvision
@@ -25,18 +29,47 @@ def get_filelist(data_dir, postfixes):
     file_list.sort()
     return file_list
 
-def load_model_checkpoint(model, ckpt):
+# def load_model_checkpoint(model, ckpt):
+#     state_dict = torch.load(ckpt, map_location="cpu")
+#     if "state_dict" in list(state_dict.keys()):
+#         state_dict = state_dict["state_dict"]
+#         try:
+#             model.load_state_dict(state_dict, strict=True)
+#         except:
+#             ## rename the keys for 256x256 model
+#             new_pl_sd = OrderedDict()
+#             for k,v in state_dict.items():
+#                 new_pl_sd[k] = v
+
+#             for k in list(new_pl_sd.keys()):
+#                 if "framestride_embed" in k:
+#                     new_key = k.replace("framestride_embed", "fps_embedding")
+#                     new_pl_sd[new_key] = new_pl_sd[k]
+#                     del new_pl_sd[k]
+#             model.load_state_dict(new_pl_sd, strict=True)
+#     else:
+#         # deepspeed
+#         new_pl_sd = OrderedDict()
+#         for key in state_dict['module'].keys():
+#             new_pl_sd[key[16:]]=state_dict['module'][key]
+#         model.load_state_dict(new_pl_sd)
+#     print('>>> model checkpoint loaded.')
+#     return model
+
+
+def load_model_checkpoint(model, ckpt, device_map="auto", offload_folder="offload"):
+    # Load state dict on CPU first
     state_dict = torch.load(ckpt, map_location="cpu")
+
     if "state_dict" in list(state_dict.keys()):
         state_dict = state_dict["state_dict"]
         try:
             model.load_state_dict(state_dict, strict=True)
         except:
-            ## rename the keys for 256x256 model
+            # Rename keys for 256x256 model
             new_pl_sd = OrderedDict()
-            for k,v in state_dict.items():
+            for k, v in state_dict.items():
                 new_pl_sd[k] = v
-
             for k in list(new_pl_sd.keys()):
                 if "framestride_embed" in k:
                     new_key = k.replace("framestride_embed", "fps_embedding")
@@ -44,13 +77,23 @@ def load_model_checkpoint(model, ckpt):
                     del new_pl_sd[k]
             model.load_state_dict(new_pl_sd, strict=True)
     else:
-        # deepspeed
+        # DeepSpeed format
         new_pl_sd = OrderedDict()
         for key in state_dict['module'].keys():
-            new_pl_sd[key[16:]]=state_dict['module'][key]
+            new_pl_sd[key[16:]] = state_dict['module'][key]
         model.load_state_dict(new_pl_sd)
-    print('>>> model checkpoint loaded.')
+
+    print(">>> model checkpoint loaded.")
+
+    # 🚀 Dispatch across devices with accelerate
+    model = dispatch_model(
+        model,
+        device_map=device_map,        # "auto" will split GPU/CPU
+        offload_dir=offload_folder    # folder for CPU-offloaded weights
+    )
+
     return model
+
 
 def load_prompts(prompt_file):
     f = open(prompt_file, 'r')
