@@ -108,16 +108,19 @@ def load_model_checkpoint(model, ckpt):
     with tempfile.NamedTemporaryFile(suffix=".pt") as tmp:
         torch.save(state_dict_to_load, tmp.name)
         
-        # Step 4: Use Accelerate to load from the clean, temporary checkpoint.
-        # This will intelligently dispatch the model across available devices.
-        print("Dispatching model with Accelerate...")
-        # The `model` passed in is an empty shell. This function populates it.
-        # `device_map="auto"` is the key for automatic device placement.
+        # --- THE CHANGE IS HERE ---
+        # Set a maximum memory limit per GPU. 
+        # Let's reserve ~4-6 GB for activations. Your GPU has ~22GB.
+        # So let's tell Accelerate it only has ~16GB for the model weights.
+        max_memory = {0: "16GiB", "cpu": "30GiB"} # Adjust CPU RAM if needed
+
+        print(f"Dispatching model with Accelerate and max_memory: {max_memory}")
         model = load_checkpoint_and_dispatch(
             model,
             checkpoint=tmp.name,
             device_map="auto",
-            no_split_module_classes=[] # Add model layer classes here if they shouldn't be split across devices
+            max_memory=max_memory, # <-- ADD THIS ARGUMENT
+            no_split_module_classes=[] # Add relevant classes if needed
         )
 
     print('>>> Model checkpoint loaded and dispatched with Accelerate.')
