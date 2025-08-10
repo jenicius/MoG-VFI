@@ -6,7 +6,7 @@ from einops import rearrange, repeat
 from collections import OrderedDict
 import torch
 from collections import OrderedDict
-from accelerate import dispatch_model
+from accelerate import dispatch_model, infer_auto_device_map, load_checkpoint_and_dispatch
 
 
 import torch
@@ -57,42 +57,73 @@ def get_filelist(data_dir, postfixes):
 #     return model
 
 
-def load_model_checkpoint(model, ckpt, device_map="auto", offload_folder="offload"):
-    # Load state dict on CPU first
-    state_dict = torch.load(ckpt, map_location="cpu")
+def load_model_checkpoint(model, ckpt):
+    """
+    Loads a model checkpoint, handling various formats and dispatching it across
+    devices using Hugging Face Accelerate.
 
-    if "state_dict" in list(state_dict.keys()):
-        state_dict = state_dict["state_dict"]
-        try:
-            model.load_state_dict(state_dict, strict=True)
-        except:
-            # Rename keys for 256x256 model
+    This function is designed to be a drop-in replacement that works with the
+    `init_empty_weights` context manager.
+
+    Args:
+        model (torch.nn.Module): An empty model shell, typically created within
+                                 `init_empty_weights()`.
+        ckpt (str): Path to the checkpoint file.
+
+    Returns:
+        torch.nn.Module: The model with weights loaded and dispatched to devices.
+    """
+    # Step 1: Load the original state dict to CPU to inspect and clean it.
+    print(f"Loading and cleaning state dict from {ckpt}...")
+    original_state_dict = torch.load(ckpt, map_location="cpu")
+    
+    # Step 2: Apply your custom logic to get a clean state_dict.
+    # This logic is copied directly from your original function.
+    if "state_dict" in list(original_state_dict.keys()):
+        # Handle PyTorch Lightning checkpoints
+        state_dict_to_load = original_state_dict["state_dict"]
+        # The key renaming logic for 256x256 models
+        if not all(k in model.state_dict() for k in state_dict_to_load.keys()):
+            print("Attempting to rename keys for compatibility...")
             new_pl_sd = OrderedDict()
-            for k, v in state_dict.items():
-                new_pl_sd[k] = v
-            for k in list(new_pl_sd.keys()):
+            for k, v in state_dict_to_load.items():
                 if "framestride_embed" in k:
-                    new_key = k.replace("framestride_embed", "fps_embedding")
-                    new_pl_sd[new_key] = new_pl_sd[k]
-                    del new_pl_sd[k]
-            model.load_state_dict(new_pl_sd, strict=True)
+                    k = k.replace("framestride_embed", "fps_embedding")
+                new_pl_sd[k] = v
+            state_dict_to_load = new_pl_sd
+
+    elif "module" in original_state_dict:
+        # Handle DeepSpeed/DDP checkpoints
+        print("Removing 'module.' prefix from DeepSpeed/DDP checkpoint...")
+        state_dict_to_load = OrderedDict()
+        for key, value in original_state_dict['module'].items():
+            new_key = key.replace('module.', '', 1) # Remove the prefix
+            state_dict_to_load[new_key] = value
     else:
-        # DeepSpeed format
-        new_pl_sd = OrderedDict()
-        for key in state_dict['module'].keys():
-            new_pl_sd[key[16:]] = state_dict['module'][key]
-        model.load_state_dict(new_pl_sd)
+        # Assumes a raw state_dict
+        state_dict_to_load = original_state_dict
 
-    print(">>> model checkpoint loaded.")
+    # Step 3: Save the clean state_dict to a temporary file.
+    # `tempfile` handles automatic creation and cleanup of the file.
+    with tempfile.NamedTemporaryFile(suffix=".pt") as tmp:
+        torch.save(state_dict_to_load, tmp.name)
+        
+        # Step 4: Use Accelerate to load from the clean, temporary checkpoint.
+        # This will intelligently dispatch the model across available devices.
+        print("Dispatching model with Accelerate...")
+        # The `model` passed in is an empty shell. This function populates it.
+        # `device_map="auto"` is the key for automatic device placement.
+        model = load_checkpoint_and_dispatch(
+            model,
+            checkpoint=tmp.name,
+            device_map="auto",
+            no_split_module_classes=[] # Add model layer classes here if they shouldn't be split across devices
+        )
 
-    # 🚀 Dispatch across devices with accelerate
-    model = dispatch_model(
-        model,
-        device_map=device_map,        # "auto" will split GPU/CPU
-        offload_dir=offload_folder    # folder for CPU-offloaded weights
-    )
-
+    print('>>> Model checkpoint loaded and dispatched with Accelerate.')
     return model
+
+
 
 
 def load_prompts(prompt_file):
